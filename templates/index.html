@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CineMatch - Flask</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+  </head>
+  <body>
+    <nav class="navbar navbar-dark bg-dark mb-4">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="/">CineMatch</a>
+      </div>
+    </nav>
+
+    <main class="container">
+      <div class="card p-4 mb-4">
+        <h1 class="h4">Enter movies you've seen</h1>
+        <p class="text-muted">Type 3–5 movies you enjoyed. Autocomplete will help.</p>
+        <form id="movies-form">
+          <div id="inputs" class="mb-3">
+            <!-- inputs inserted by JS -->
+          </div>
+          <div class="d-flex gap-2">
+            <button id="get-btn" class="btn btn-primary">Get Recommendations</button>
+            <button id="clear-btn" type="button" class="btn btn-outline-secondary">Clear</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="results" class="row g-3"></div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+    const NUM = 5;
+    const inputsDiv = document.getElementById('inputs');
+    const resultsDiv = document.getElementById('results');
+    const getBtn = document.getElementById('get-btn');
+    const clearBtn = document.getElementById('clear-btn');
+
+    function createInput(i){
+      const wrapper = document.createElement('div');
+      wrapper.className = 'mb-2 position-relative';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'form-control movie-input';
+      input.placeholder = 'Movie #' + (i+1);
+      input.dataset.index = i;
+
+      const list = document.createElement('div');
+      list.className = 'suggestions p-2 bg-white shadow-sm rounded d-none';
+      list.style.position = 'absolute';
+      list.style.zIndex = 2000;
+      list.style.left = '0';
+      list.style.right = '0';
+
+      input.addEventListener('input', async (e) => {
+        const q = e.target.value.trim();
+        if (!q || q.length < 2) { list.innerHTML=''; list.classList.add('d-none'); return; }
+        try {
+          const resp = await axios.get('/search', { params: { q } });
+          const items = resp.data.results || [];
+          list.innerHTML = '';
+          if (items.length === 0){ list.classList.add('d-none'); return; }
+          items.slice(0,6).forEach(it => {
+            const row = document.createElement('div');
+            row.className = 'd-flex align-items-center suggestion-item p-1';
+            row.style.cursor = 'pointer';
+            row.innerHTML = `<img src='${it.poster_path ? 'https://image.tmdb.org/t/p/w92'+it.poster_path : ''}' style='width:46px;height:68px;object-fit:cover;margin-right:8px;border-radius:4px'/>` +
+                            `<div><strong style='font-size:14px'>${it.title}</strong><div style='font-size:12px;color:#666'>${it.release_date ? it.release_date.slice(0,4):''}</div></div>`;
+            row.addEventListener('click', ()=>{
+              input.value = it.title;
+              list.classList.add('d-none');
+            });
+            list.appendChild(row);
+          });
+          list.classList.remove('d-none');
+        } catch (err){ console.error(err); }
+      });
+
+      wrapper.appendChild(input);
+      wrapper.appendChild(list);
+      inputsDiv.appendChild(wrapper);
+    }
+
+    for(let i=0;i<NUM;i++) createInput(i);
+
+    clearBtn.addEventListener('click', ()=>{
+      document.querySelectorAll('.movie-input').forEach(inp => inp.value='');
+      resultsDiv.innerHTML='';
+    });
+
+    getBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const titles = Array.from(document.querySelectorAll('.movie-input')).map(i=>i.value.trim()).filter(Boolean);
+      if (titles.length < 3){ alert('Enter at least 3 movies'); return; }
+      getBtn.disabled = true; getBtn.textContent = 'Finding…';
+      resultsDiv.innerHTML = '<div class="col-12">Searching for recommendations…</div>';
+      try{
+        const resp = await axios.post('/recommend', { titles });
+        const recs = resp.data.recommendations || [];
+        if (!recs.length){ resultsDiv.innerHTML = '<div class="col-12">No recommendations found.</div>'; return; }
+        // render cards
+        resultsDiv.innerHTML = '';
+        recs.slice(0,24).forEach(m => {
+          const col = document.createElement('div');
+          col.className = 'col-md-6 col-lg-4';
+          const card = document.createElement('div');
+          card.className = 'card h-100';
+          const img = document.createElement('img');
+          img.className = 'card-img-top';
+          img.src = m.poster_path ? ('https://image.tmdb.org/t/p/w342'+m.poster_path) : '';
+          img.style.height = '420px'; img.style.objectFit='cover';
+          const body = document.createElement('div'); body.className='card-body d-flex flex-column';
+          body.innerHTML = `<h5 class='card-title'>${m.title} <small class='text-muted'>${m.release_date?m.release_date.slice(0,4):''}</small></h5>
+                            <p class='card-text' style='flex:1'>${m.overview || ''}</p>
+                            <div class='mt-2'><strong>TMDB:</strong> ${m.vote_average ?? '—'}</div>`;
+          const footer = document.createElement('div'); footer.className='card-footer bg-white';
+          footer.innerHTML = `<div class='d-flex gap-2'><a class='btn btn-sm btn-outline-primary' target='_blank' href='https://www.themoviedb.org/movie/${m.id}'>Details</a>` +
+                             (m.trailer ? `<a class='btn btn-sm btn-primary' target='_blank' href='https://www.youtube.com/watch?v=${m.trailer}'>Watch trailer</a>` : '') +
+                             `</div>`;
+          card.appendChild(img); card.appendChild(body); card.appendChild(footer);
+          col.appendChild(card); resultsDiv.appendChild(col);
+        });
+      }catch(err){
+        console.error(err);
+        resultsDiv.innerHTML = '<div class="col-12 text-danger">Error fetching recommendations.</div>';
+      }finally{
+        getBtn.disabled = false; getBtn.textContent = 'Get Recommendations';
+      }
+    });
+    </script>
+  </body>
+</html>

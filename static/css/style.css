@@ -1,0 +1,3 @@
+body { background: #f5f7fb; }
+.suggestions { max-height: 260px; overflow:auto; }
+.suggestion-item:hover { background:#f6f6f6; }
